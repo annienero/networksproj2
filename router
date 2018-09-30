@@ -1,4 +1,4 @@
-#!/usr/bin/python python -u
+#!/usr/bin/python -u
 import argparse, socket, time, json, select, struct, math
 
 #DEBUG = True
@@ -180,8 +180,8 @@ class Router:
         packet['src'] = srcif[:len(srcif) - 1] + '1'
         packet['dst'] = srcif
         packet['type'] = 'table'
-        packet['msg'] = getTable()
-        sendMessage(self.sockets[srcif], packet)
+        packet['msg'] = self.getTable()
+        self.sendMessage(self.sockets[srcif], packet)
         return True
 
     def handle_packet(self, srcif, packet): # where packet is the message object, return true on success, false otherwise
@@ -196,7 +196,7 @@ class Router:
                 # TODO what do
     	    return 0
     	if packet['type'] == 'dump':
-    	    return self.dump(srcif, packet)
+    	    return self.dump(srcif)
     	if packet['type'] == 'table':
                 # TODO what do
     	    return 0
@@ -210,7 +210,7 @@ class Router:
 	        "type": "no route",
 	        "msg": {}
         }
-        sendMessage(self.sockets[srcif], packet)
+        self.sendMessage(self.sockets[srcif], packet)
 
     def run(self):
 	while True:
@@ -237,10 +237,11 @@ class Router:
                     return
         return
 
-def formatMessage(n, packet):
+def formatMessage(dest, packet): # works for update
+    packetSrc = packet['src']
     newPacket = {}
-    newPacket['src'] = n[:len(n) - 1] + '1'
-    newPacket['dst'] = n
+    newPacket['src'] = packetSrc[:len(packetSrc) - 1] + '1'
+    newPacket['dst'] = dest
     newPacket['type'] = 'update'
     newPacket['msg'] = packet['msg']
     return newPacket
