@@ -57,7 +57,7 @@ class Router:
         self.sockets = {}
         for relationship in networks:
             network, relation = relationship.split("-")
-            if DEBUG: 
+            if DEBUG:
                 print "Starting socket for", network, relation
             self.sockets[network] = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
             self.sockets[network].setblocking(0)
@@ -76,13 +76,13 @@ class Router:
         # TODO called from get_route
         outroutes = []
         return outroutes
-            
+
     def get_highest_preference(self, routes):
         """ select the route with the shortest AS Path """
         # TODO called from get_route
         outroutes = []
         return outroutes
-         
+
     def get_self_origin(self, routes):
         """ select self originating routes """
         # TODO called from get_route
@@ -132,18 +132,33 @@ class Router:
         # TODO (this is the most difficult task, save until last)
         return False
 
+    def sendMessage(self, socket, packet):
+        socket.send(json.dumps(packet))
+
     def update(self, srcif, packet):
         """	handle update packets	"""
-	# update routing table
-	# first calculate key
-	network = packet.msg.network
-	netmask = packet.msg.netmask
-	key = resolveForwardingKey(network, netmask)
-	self.table[key] = self.sockets[srcif]
-	# save a copy of the routing announcement for later
-	self.routeAnnouncements.append(packet.msg)
-        return False
-    
+    	# update routing table
+    	# first calculate key
+    	network = packet['msg']['network']
+    	netmask = packet['msg']['netmask']
+    	key = resolveForwardingKey(network, netmask)
+    	self.table[key] = self.sockets[srcif]
+    	# save a copy of the routing announcement for later
+    	self.routeAnnouncements.append(packet['msg'])
+        # Update received from a customer
+        if self.relations[packet['src']] == 'cust':
+            # send updates to all other neighbors
+            for n in self.relations.keys():
+                if n != packet['src']:
+                    self.sendMessage(self.sockets[n], formatMessage(n, packet))
+        # Update received from a peer or a provider
+        else:
+            # only send updates to your customers
+            for n in self.relations.keys():
+                if self.relations[n] == 'cust':
+                    self.sendMessage(self.sockets[n], formatMessage(n, packet))
+        return True
+
     def revoke(self, packet):
         """	handle revoke packets	"""
         # TODO called from handle packet
@@ -154,41 +169,36 @@ class Router:
         # TODO called from handle packet
         return True
 
-    def handle_packet(self, srcif, packet): # where packet is the message object
+    def handle_packet(self, srcif, packet): # where packet is the message object, return true on success, false otherwise
         """	dispatches a packet """
-        # TODO THIS IS OUR ENTRY POINT, called from main
-	# return true on success, false otherwise
-	if packet.type == 'update':
-	    return update(srcif, packet) # returns success status
-	if packet.type == 'revoke':
-	    return revoke(packet)
-	if packet.type == 'data':
-	    return forward(srcif, packet)
-	if packet.type == 'no route':
-            # TODO what do
-	    return 0
-	if packet.type == 'dump':
-	    return dump(packet)
-	if packet.type == 'table':
-            # TODO what do
-	    return 0
+    	if packet['type'] == 'update':
+    	    return self.update(srcif, packet) # returns success status
+    	if packet['type'] == 'revoke':
+    	    return self.revoke(packet)
+    	if packet['type'] == 'data':
+    	    return self.forward(srcif, packet)
+    	if packet['type'] == 'no route':
+                # TODO what do
+    	    return 0
+    	if packet['type'] == 'dump':
+    	    return self.dump(packet)
+    	if packet['type'] == 'table':
+                # TODO what do
+    	    return 0
         return False
 
     def send_error(self, srcif):
         """ Send a no_route error message """
 	# TODO send this message
 	'''{
-	    "source": self.ip,
-	    "dest":   srcif,
-	    "type":   "no route",                   
-	    "message": {}
+	    "src": self.ip,
+	    "dst":   srcif,
+	    "type":   "no route",
+	    "msg": {}
 	}'''
         return
 
     def run(self):
-        print(ipToBin("0.0.0.0"))
-	print(ipToBin("255.255.255.255"))
-	print(ipToBin("127.3.72.42"))
 	while True:
 	    # socks is the list of sockets that are ready to be read from at this time
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
@@ -213,6 +223,14 @@ class Router:
                     return
         return
 
+def formatMessage(n, packet):
+    newPacket = {}
+    newPacket['src'] = n[:len(n) - 1] + '1'
+    newPacket['dst'] = n
+    newPacket['type'] = 'update'
+    newPacket['msg'] = packet['msg']
+    return newPacket
+
 def ipToBin(ip):
     bin = ""
     for val in map(lambda x: int(x), ip.split('.')):
@@ -227,6 +245,6 @@ def ipToBin(ip):
 def resolveForwardingKey(network, netmask):
     return ipToBin(network)[:netmask.count('1')]
 
-if  == "__main__":
+if __name__ == "__main__":
     router = Router(args.networks)
     router.run()
