@@ -141,8 +141,7 @@ class Router:
     	# first calculate key
     	network = packet['msg']['network']
     	netmask = packet['msg']['netmask']
-    	key = resolveForwardingKey(network, netmask)
-    	self.table[key] = self.sockets[srcif]
+    	self.table[(network, netmask)] = srcif
     	# save a copy of the routing announcement for later
     	self.routeAnnouncements.append(packet['msg'])
         # Update received from a customer
@@ -164,9 +163,25 @@ class Router:
         # TODO called from handle packet
         return True
 
-    def dump(self, packet):
+    def getTable(self):
+        message = []
+        for pair in self.table:
+            obj = {}
+            obj['network'] = pair[0]
+            obj['netmask'] = pair[1]
+            obj['peer'] = self.table[pair]
+            message.append(obj)
+        return message
+
+
+    def dump(self, srcif):
         """	handles dump table requests	"""
-        # TODO called from handle packet
+        packet = {}
+        packet['src'] = srcif[:len(srcif) - 1] + '1'
+        packet['dst'] = srcif
+        packet['type'] = 'table'
+        packet['msg'] = getTable()
+        sendMessage(self.sockets[srcif], packet)
         return True
 
     def handle_packet(self, srcif, packet): # where packet is the message object, return true on success, false otherwise
@@ -181,7 +196,7 @@ class Router:
                 # TODO what do
     	    return 0
     	if packet['type'] == 'dump':
-    	    return self.dump(packet)
+    	    return self.dump(srcif, packet)
     	if packet['type'] == 'table':
                 # TODO what do
     	    return 0
@@ -189,14 +204,13 @@ class Router:
 
     def send_error(self, srcif):
         """ Send a no_route error message """
-	# TODO send this message
-	'''{
-	    "src": self.ip,
-	    "dst":   srcif,
-	    "type":   "no route",
-	    "msg": {}
-	}'''
-        return
+        packet = {
+            "src": srcif[:len(srcif) - 1] + '1',
+	        "dst": srcif,
+	        "type": "no route",
+	        "msg": {}
+        }
+        sendMessage(self.sockets[srcif], packet)
 
     def run(self):
 	while True:
