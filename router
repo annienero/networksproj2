@@ -123,13 +123,19 @@ class Router:
         return self.sockets[peer] if peer else None
 
     def getRoute(self, dest):
+        matches = {}
         destAsBin = ipToBin(dest)
         for network in self.table.keys():
             bin = resolveForwardingKey(network[0], network[1])
             if destAsBin[:len(bin)] == bin:
-                return self.table[network]
-        return ""
-
+                matches[self.table[network]] = len(bin)
+        max = -1
+        network = ""
+        for ip in matches.keys():
+            if matches[ip] > max:
+                max = matches[ip]
+                network = ip
+        return network
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
