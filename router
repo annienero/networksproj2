@@ -132,20 +132,6 @@ class Router:
         # TODO (this is the most difficult task, save until last)
         return False
 
-    def ipToBin(ip):
-	bin = ""
-        for val in map(lambda x: int(x), ip.split('.'))
-            for x in range(8)
-		if val >= pow(2, 7 - x)
-  		    bin += '1'
-		    val -= pow(2, 7 - x)
-	        else
-		    bin += '0'
-	return bin
-
-    def resolveForwardingKey(network, netmask):
-	return ipToBin(network)[:netmask.count('1')]
-
     def update(self, srcif, packet):
         """	handle update packets	"""
 	# update routing table
@@ -172,18 +158,20 @@ class Router:
         """	dispatches a packet """
         # TODO THIS IS OUR ENTRY POINT, called from main
 	# return true on success, false otherwise
-	if (packet.type == 'update'
+	if packet.type == 'update':
 	    return update(srcif, packet) # returns success status
-	if (packet.type == 'revoke')
+	if packet.type == 'revoke':
 	    return revoke(packet)
-	if (packet.type == 'data')
+	if packet.type == 'data':
 	    return forward(srcif, packet)
-	if (packet.type == 'no route')
+	if packet.type == 'no route':
             # TODO what do
-	if (packet.type == 'dump')
-            return dump(packet)
-	if (packet.type == 'table')
+	    return 0
+	if packet.type == 'dump':
+	    return dump(packet)
+	if packet.type == 'table':
             # TODO what do
+	    return 0
         return False
 
     def send_error(self, srcif):
@@ -198,7 +186,10 @@ class Router:
         return
 
     def run(self):
-        while True:
+        print(ipToBin("0.0.0.0"))
+	print(ipToBin("255.255.255.255"))
+	print(ipToBin("127.3.72.42"))
+	while True:
 	    # socks is the list of sockets that are ready to be read from at this time
             socks = select.select(self.sockets.values(), [], [], 0.1)[0]
             for conn in socks:
@@ -222,6 +213,20 @@ class Router:
                     return
         return
 
-if __name__ == "__main__":
+def ipToBin(ip):
+    bin = ""
+    for val in map(lambda x: int(x), ip.split('.')):
+        for x in range(8):
+            if val >= pow(2, 7 - x):
+                bin += '1'
+                val -= pow(2, 7 - x)
+            else:
+                bin += '0'
+    return bin
+
+def resolveForwardingKey(network, netmask):
+    return ipToBin(network)[:netmask.count('1')]
+
+if  == "__main__":
     router = Router(args.networks)
     router.run()
