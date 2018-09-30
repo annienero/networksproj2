@@ -46,7 +46,6 @@ class Router:
     updates = None
     relations = None
     sockets = None
-    ip = "0.0.0.0" #TODO this is not valid
     table = {} # forwarding table, map of strings of bits to IPs
     routeAnnouncements = []
 
@@ -57,13 +56,28 @@ class Router:
         self.sockets = {}
         for relationship in networks:
             network, relation = relationship.split("-")
-            if DEBUG:
-                print "Starting socket for", network, relation
             self.sockets[network] = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
             self.sockets[network].setblocking(0)
             self.sockets[network].connect(network)
             self.relations[network] = relation
         return
+
+    # forwarding table helpers
+
+    # adds an entry to the forwarding table
+    def addTableEntry(self, networkKey, networkInfo):
+        if not self.table.has_key(networkKey):
+            self.table[networkKey] = []
+        self.table[networkKey].append(networkInfo)
+
+    # flat map self.table into a list of (networkKey, networkInfo)
+    def flattenTable(self):
+        acc = []
+        for networkKey in self.table.keys():
+            loNetworkInfo = self.table[networkKey]
+            loNetworkPairs = map(lambda nwi: (networkKey, nwi), loNetworkInfo)
+            acc += loNetworkPairs
+        return acc
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
@@ -122,20 +136,64 @@ class Router:
             routes = self.filter_relationships(srcif, routes)
         return self.sockets[peer] if peer else None
 
+    # returns an ip address as a string
     def getRoute(self, dest):
-        matches = {}
         destAsBin = ipToBin(dest)
-        for network in self.table.keys():
-            bin = resolveForwardingKey(network[0], network[1])
-            if destAsBin[:len(bin)] == bin:
-                matches[self.table[network]] = len(bin)
-        max = -1
-        network = ""
-        for ip in matches.keys():
-            if matches[ip] > max:
-                max = matches[ip]
-                network = ip
-        return network
+        # if one is better, return -1
+        # if two is better, return 1
+        def compHelp(networkPair1, networkPair2):
+            bin1 = resolveForwardingKey(networkPair1[0][0], networkPair1[0][1])
+            bin2 = resolveForwardingKey(networkPair2[0][0], networkPair2[0][1])
+            np1Match = destAsBin[:len(bin1)] == bin1
+            np2Match = destAsBin[:len(bin2)] == bin2
+            np1Self = networkPair1[1]['selfOrigin']
+            np2Self = networkPair2[1]['selfOrigin']
+            np1Local = networkPair1[1]['localpref']
+            np2Local = networkPair2[1]['localpref']
+            np1AS = len(networkPair1[1]['ASPath'])
+            np2AS = len(networkPair2[1]['ASPath'])
+            originToNumMap = {'UNK': 1, 'EGP': 2, 'IGP': 3}
+            np1Origin = originToNumMap[networkPair1[1]['origin']]
+            np2Origin = originToNumMap[networkPair2[1]['origin']]
+            src1 = int(ipToBin(networkPair1[1]['ip']), 2)
+            src2 = int(ipToBin(networkPair2[1]['ip']), 2)
+            if not np2Match:
+                return -1
+            if not np1Match:
+                return 1
+            if np1Local > np2Local:
+                return -1
+            if np1Local < np2Local:
+                return 1
+            if np1Self == 'True' and np2Self == 'False':
+                return -1
+            if np2Self == 'True' and np1Self == 'False':
+                return 1
+            if len(bin1) > len(bin2):
+                return 1
+            if len(bin2) > len(bin1):
+                return -1
+            if np1AS > np2AS:
+                return 1
+            if np2AS > np1AS:
+                return -1
+            if np1Origin > np2Origin:
+                return -1
+            if np2Origin > np1Origin:
+                return 1
+            return src1 - src2
+
+        allTableEntries = self.flattenTable()
+        allTableEntries.sort(compHelp)
+        bestEntry = allTableEntries[0]
+        route = (bestEntry[0][0], bestEntry[0][1], bestEntry[1]['ip'])
+        # (network, netmask, ip)
+        bin = resolveForwardingKey(route[0], route[1])
+        match = destAsBin[:len(bin)] == bin
+        if not match:
+            return ""
+        else:
+            return route[2]
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
@@ -157,11 +215,17 @@ class Router:
         """	handle update packets	"""
     	# update routing table
     	# first calculate key
+        networkInfo = {}
     	network = packet['msg']['network']
     	netmask = packet['msg']['netmask']
-    	self.table[(network, netmask)] = srcif
+        networkInfo['localpref'] = packet['msg']['localpref']
+        networkInfo['selfOrigin'] = packet['msg']['selfOrigin']
+        networkInfo['ASPath'] = packet['msg']['ASPath']
+        networkInfo['origin'] = packet['msg']['origin']
+        networkInfo['ip'] = srcif
+    	self.addTableEntry((network, netmask), networkInfo)
     	# save a copy of the routing announcement for later
-    	self.routeAnnouncements.append(packet['msg'])
+    	self.routeAnnouncements.append(packet)
         # Update received from a customer
         if self.relations[packet['src']] == 'cust':
             # send updates to all other neighbors
@@ -183,11 +247,11 @@ class Router:
 
     def getTable(self):
         message = []
-        for pair in self.table:
+        for pair in self.flattenTable():
             obj = {}
-            obj['network'] = pair[0]
-            obj['netmask'] = pair[1]
-            obj['peer'] = self.table[pair]
+            obj['network'] = pair[0][0]
+            obj['netmask'] = pair[0][1]
+            obj['peer'] = pair[1]['ip']
             message.append(obj)
         return message
 
@@ -208,7 +272,10 @@ class Router:
     	if packet['type'] == 'revoke':
     	    return self.revoke(packet)
     	if packet['type'] == 'data':
-    	    return self.forward(srcif, packet)
+            #if (self.relations[srcif] == 'prov' or self.relations[srcif] == 'peer') and (self.relations[packet['dst']] == 'prov' or self.relations[packet['dst']] == 'peer'):
+    	     #  return False
+            #else:
+            return self.forward(srcif, packet)
     	if packet['type'] == 'no route':
                 # TODO what do
     	    return 0
