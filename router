@@ -122,10 +122,22 @@ class Router:
             routes = self.filter_relationships(srcif, routes)
         return self.sockets[peer] if peer else None
 
+    def getRoute(self, dest):
+        destAsBin = ipToBin(dest)
+        for network in self.table.keys():
+            bin = resolveForwardingKey(network[0], network[1])
+            if destAsBin[:len(bin)] == bin:
+                return self.table[network]
+        return ""
+
+
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        # TODO called from handle packet
-        return False
+        route = self.getRoute(packet['dst'])
+        if (route == ""):
+            return False
+        self.sendMessage(self.sockets[route], packet)
+        return True
 
     def coalesce(self):
         """	coalesce any routes that are right next to each other	"""
@@ -172,7 +184,6 @@ class Router:
             obj['peer'] = self.table[pair]
             message.append(obj)
         return message
-
 
     def dump(self, srcif):
         """	handles dump table requests	"""
@@ -258,7 +269,7 @@ def ipToBin(ip):
     return bin
 
 def resolveForwardingKey(network, netmask):
-    return ipToBin(network)[:netmask.count('1')]
+    return ipToBin(network)[:ipToBin(netmask).count('1')]
 
 if __name__ == "__main__":
     router = Router(args.networks)
