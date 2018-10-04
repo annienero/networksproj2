@@ -137,19 +137,21 @@ class Router:
         return self.sockets[peer] if peer else None
 
     # returns an ip address as a string
-    def getRoute(self, dest):
+    def getRoute(self, srcif, dest):
         destAsBin = ipToBin(dest)
         # if one is better, return -1
         # if two is better, return 1
+
+
         def compHelp(networkPair1, networkPair2):
             bin1 = resolveForwardingKey(networkPair1[0][0], networkPair1[0][1])
             bin2 = resolveForwardingKey(networkPair2[0][0], networkPair2[0][1])
             np1Match = destAsBin[:len(bin1)] == bin1
             np2Match = destAsBin[:len(bin2)] == bin2
-            np1Self = networkPair1[1]['selfOrigin']
-            np2Self = networkPair2[1]['selfOrigin']
             np1Local = networkPair1[1]['localpref']
             np2Local = networkPair2[1]['localpref']
+            np1Sorg = networkPair1[1]['selfOrigin']
+            np2Sorg = networkPair2[1]['selfOrigin']
             np1AS = len(networkPair1[1]['ASPath'])
             np2AS = len(networkPair2[1]['ASPath'])
             originToNumMap = {'UNK': 1, 'EGP': 2, 'IGP': 3}
@@ -157,22 +159,22 @@ class Router:
             np2Origin = originToNumMap[networkPair2[1]['origin']]
             src1 = int(ipToBin(networkPair1[1]['ip']), 2)
             src2 = int(ipToBin(networkPair2[1]['ip']), 2)
-            if not np2Match:
-                return -1
             if not np1Match:
                 return 1
+            if not np2Match:
+                return -1
             if np1Local > np2Local:
                 return -1
-            if np1Local < np2Local:
+            if np2Local > np1Local:
                 return 1
-            if np1Self == 'True' and np2Self == 'False':
+            if np1Sorg == 'True' and np2Sorg == 'False':
                 return -1
-            if np2Self == 'True' and np1Self == 'False':
+            if np2Sorg == 'True' and np1Sorg == 'False':
                 return 1
             if len(bin1) > len(bin2):
-                return 1
-            if len(bin2) > len(bin1):
                 return -1
+            if len(bin2) > len(bin1):
+                return 1
             if np1AS > np2AS:
                 return 1
             if np2AS > np1AS:
@@ -182,22 +184,23 @@ class Router:
             if np2Origin > np1Origin:
                 return 1
             return src1 - src2
-
         allTableEntries = self.flattenTable()
         allTableEntries.sort(compHelp)
-        bestEntry = allTableEntries[0]
-        route = (bestEntry[0][0], bestEntry[0][1], bestEntry[1]['ip'])
-        # (network, netmask, ip)
-        bin = resolveForwardingKey(route[0], route[1])
-        match = destAsBin[:len(bin)] == bin
-        if not match:
-            return ""
-        else:
-            return route[2]
+        bestEntry = 0
+        for i in range(0, len(allTableEntries)):
+            bestEntry = allTableEntries[i]
+            route = (bestEntry[0][0], bestEntry[0][1], bestEntry[1]['ip'])
+            # (network, netmask, ip)
+            bin = resolveForwardingKey(route[0], route[1])
+            match = destAsBin[:len(bin)] == bin
+            if match:
+                if not ((self.relations[srcif] == 'peer' or self.relations[srcif] == 'prov') and (self.relations[route[2]] == 'peer' or self.relations[route[2]] == 'prov')):
+                    return route[2]
+        return ""
 
     def forward(self, srcif, packet):
         """	Forward a data packet	"""
-        route = self.getRoute(packet['dst'])
+        route = self.getRoute(srcif, packet['dst'])
         if (route == ""):
             return False
         self.sendMessage(self.sockets[route], packet)
@@ -272,12 +275,9 @@ class Router:
     	if packet['type'] == 'revoke':
     	    return self.revoke(packet)
     	if packet['type'] == 'data':
-            #if (self.relations[srcif] == 'prov' or self.relations[srcif] == 'peer') and (self.relations[packet['dst']] == 'prov' or self.relations[packet['dst']] == 'peer'):
-    	     #  return False
-            #else:
-            return self.forward(srcif, packet)
+    	    return self.forward(srcif, packet)
     	if packet['type'] == 'no route':
-                # TODO what do
+            # TODO what do
     	    return 0
     	if packet['type'] == 'dump':
     	    return self.dump(srcif)
