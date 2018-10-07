@@ -129,12 +129,6 @@ class Router:
             if not entry == routeEntry: # make sure we skip ourself if we're in the list
                 aggregation = self.aggregable(routeEntry, entry) # will be the new entry if they are aggregable, false otherwise
                 if aggregation:
-		    print("HEY WE FOUND SOME THAT WERE AGGREGABLE")
-		    print(routeEntry)
-		    print(entry)
-		    print("and their aggregation entry...")
-		    print(aggregation)
-		    print("------------")
                     # remove both the entries involved in aggregation, then add the aggregation
                     self.removeTableEntry(routeEntry[0], routeEntry[1])
                     self.removeTableEntry(entry[0], entry[1])
