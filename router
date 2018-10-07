@@ -124,7 +124,7 @@ class Router:
     # do the aggregation and return true, otherwise return false
     def tryAggregate(self, routeEntry):
         allEntries = self.flattenTable()
-        # if routeEntry is already in allEntries, 
+        # if routeEntry is already in allEntries,
         for entry in allEntries:
             if not entry == routeEntry: # make sure we skip ourself if we're in the list
                 aggregation = self.aggregable(routeEntry, entry) # will be the new entry if they are aggregable, false otherwise
@@ -153,7 +153,7 @@ class Router:
 	    for entry in allEntries: #try to aggregate every entry with every other entry
 		if self.tryAggregate(entry):
 		    doneAggregating = False #if we're able to aggregate something, then we might not be done aggregating
-		
+
 
     # we check the given route for aggregability against everything in the table,
     # when we find a match, calculate what the new entry should be,
@@ -314,9 +314,9 @@ class Router:
     	self.addTableEntry((network, netmask), networkInfo)
     	# save a copy of the routing announcement for later
     	self.routeAnnouncements.append(packet)
-	# see if we can aggregate the new route with anything
-	self.tryAggregate(((network, netmask), networkInfo))
-	self.runAggregation() #now try aggregating anything in entire table
+	    # see if we can aggregate the new route with anything
+        self.tryAggregate(((network, netmask), networkInfo))
+        self.runAggregation() #now try aggregating anything in entire table
         # Update received from a customer
         if self.relations[packet['src']] == 'cust':
             # send updates to all other neighbors
@@ -331,9 +331,26 @@ class Router:
                     self.sendMessage(self.sockets[n], formatMessage(n, packet))
         return True
 
-    def revoke(self, packet):
+    def revoke(self, srcif, packet):
         """	handle revoke packets	"""
         self.routeAnnouncements.append(packet)
+        for net in packet['msg']:
+            network = net['network']
+            netmask = net['netmask']
+            for info in self.table[(network, netmask)]:
+                if info['nextHopIp'] == srcif:
+                    self.removeTableEntry((network, netmask), info)
+        if self.relations[packet['src']] == 'cust':
+            # send updates to all other neighbors
+            for n in self.relations.keys():
+                if n != packet['src']:
+                    self.sendMessage(self.sockets[n], formatMessageRevoke(n, packet))
+        # Update received from a peer or a provider
+        else:
+            # only send updates to your customers
+            for n in self.relations.keys():
+                if self.relations[n] == 'cust':
+                    self.sendMessage(self.sockets[n], formatMessageRevoke(n, packet))
         return True
 
     def getTable(self):
@@ -361,7 +378,7 @@ class Router:
     	if packet['type'] == 'update':
     	    return self.update(srcif, packet) # returns success status
     	if packet['type'] == 'revoke':
-    	    return self.revoke(packet)
+    	    return self.revoke(srcif, packet)
     	if packet['type'] == 'data':
     	    return self.forward(srcif, packet)
     	if packet['type'] == 'no route':
@@ -374,11 +391,11 @@ class Router:
     	    return 0
         return False
 
-    def send_error(self, srcif):
+    def send_error(self, srcif, src):
         """ Send a no_route error message """
         packet = {
             "src": srcif[:len(srcif) - 1] + '1',
-	        "dst": srcif,
+	        "dst": src,
 	        "type": "no route",
 	        "msg": {}
         }
@@ -404,7 +421,7 @@ class Router:
 		    # parse the json data in k into a python object
                     msg = json.loads(k)
                     if not self.handle_packet(srcif, msg):
-                        self.send_error(srcif)
+                        self.send_error(srcif, msg['src'])
                 else:
                     return
         return
@@ -417,6 +434,15 @@ def formatMessage(dest, packet): # works for update
     newPacket['src'] = packetSrc[:len(packetSrc) - 1] + '1'
     newPacket['dst'] = dest
     newPacket['type'] = 'update'
+    newPacket['msg'] = packet['msg']
+    return newPacket
+
+def formatMessageRevoke(dest, packet):
+    packetSrc = packet['src']
+    newPacket = {}
+    newPacket['src'] = packetSrc[:len(packetSrc) - 1] + '1'
+    newPacket['dst'] = dest
+    newPacket['type'] = 'revoke'
     newPacket['msg'] = packet['msg']
     return newPacket
 
