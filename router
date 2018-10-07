@@ -118,8 +118,8 @@ class Router:
         sameNextHop = routeEntry1[1]['nextHopIp'] == routeEntry2[1]['nextHopIp']
         if numericallyAdjacent and sameLocalpref and sameSelfOrigin and sameASPath and sameOrigin and sameNextHop:
             # calculate the new RouteEntry and return it
-            shortenedNetworkIp = shortenIp(routeEntry[0][0], netmaskLength-1)
-            shortenedNetmaskIp = shortenIp(routeEntry[0][1], netmaskLength-1)
+            shortenedNetworkIp = shortenIp(routeEntry1[0][0], netmaskLength-1)
+            shortenedNetmaskIp = shortenIp(routeEntry1[0][1], netmaskLength-1)
             return ((shortenedNetworkIp, shortenedNetmaskIp), routeEntry1[1])
         else:
             return False
@@ -134,13 +134,20 @@ class Router:
             if not entry == routeEntry: # make sure we skip ourself if we're in the list
                 aggregation = self.aggregable(routeEntry, entry) # will be the new entry if they are aggregable, false otherwise
                 if aggregation:
+		    print("HEY WE FOUND SOME THAT WERE AGGREGABLE")
+		    print(routeEntry)
+		    print(entry)
+		    print("and their aggregation entry...")
+		    print(aggregation)
+		    print("------------")
                     # remove both the entries involved in aggregation, then add the aggregation
                     self.removeTableEntry(routeEntry[0], routeEntry[1])
                     self.removeTableEntry(entry[0], entry[1])
                     self.addTableEntry(aggregation[0], aggregation[1])
                     return True
-                else:
-                    return False
+	#if we didn't find anything that was aggregable return false
+	print("NOTHING AGGREGABLE THIS TIME")
+	return False
 
     # aggregate all entries in the table that can be aggregated, until no more can be aggregated
     def runAggregation(self):
@@ -308,6 +315,8 @@ class Router:
     	self.addTableEntry((network, netmask), networkInfo)
     	# save a copy of the routing announcement for later
     	self.routeAnnouncements.append(packet)
+	# see if we can aggregate the new route with anything
+	self.tryAggregate(((network, netmask), networkInfo))
         # Update received from a customer
         if self.relations[packet['src']] == 'cust':
             # send updates to all other neighbors
@@ -444,7 +453,4 @@ def resolveForwardingKey(network, netmask):
 
 if __name__ == "__main__":
     router = Router(args.networks)
-    # some print testing for untested methods
-    print("111111111111111111100000000000000 (255.255.192.0) = " + binToIp("11111111111111111100000000000000"))
-    print("255.255.128.0 = " + shortenIp("255.255.192.0", 17)) 
     router.run()
