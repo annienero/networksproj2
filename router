@@ -74,7 +74,6 @@ class Router:
             self.table[networkKey] = []
         self.table[networkKey].append(networkInfo)
 
-    # NEEDS TESTING
     # removes an entry from the forwarding table
     def removeTableEntry(self, networkKey, networkInfo):
         if not self.table.has_key(networkKey):
@@ -97,9 +96,6 @@ class Router:
 
     # -------- R O U T E   A G G R E G A T I O N   H E L P E R S -------- #
 
-    # need a function to convert from binary string back into an ip string
-
-    # NEEDS TESTING
     # checks if the given routes are aggregable, if they are returns the new route resulting from their aggregation
     # otherwise returns false
     # (they have the same attributes, next hop, and numerically adjacent networks)
@@ -124,7 +120,6 @@ class Router:
         else:
             return False
 
-    # NEEDS TESTING
     # if the given route can be aggregated with anything in the forwarding table,
     # do the aggregation and return true, otherwise return false
     def tryAggregate(self, routeEntry):
@@ -436,7 +431,6 @@ def ipToBin(ip):
                 bin += '0'
     return bin
 
-# NEEDS TESTING
 def binToIp(bin):
     ipNumbers = []
     ipNumbers.append(str(int(bin[0:8], 2)))
@@ -445,7 +439,6 @@ def binToIp(bin):
     ipNumbers.append(str(int(bin[24:32], 2)))
     return ".".join(ipNumbers)
 
-# NEEDS TESTING
 # leaves the first length bits of the ip untouched, and zeroes all bits after that point
 def shortenIp(ip, length):
     thirtyTwoZeroBits = "00000000000000000000000000000000"
