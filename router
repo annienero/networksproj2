@@ -146,15 +146,19 @@ class Router:
                     self.addTableEntry(aggregation[0], aggregation[1])
                     return True
 	#if we didn't find anything that was aggregable return false
-	print("NOTHING AGGREGABLE THIS TIME")
 	return False
 
     # aggregate all entries in the table that can be aggregated, until no more can be aggregated
     def runAggregation(self):
-	print("this is still todo -- runAggregation()")
+	doneAggregating = False
         # for every entry in the table, try to aggregate it with every other entry
-        # if you can't aggregate any of them, you're done
-        # if you can, aggregate them and then repeat this whole process on the newly made table
+	while not doneAggregating:
+	    allEntries = self.flattenTable()
+	    doneAggregating = True #assume we're done aggregating after this until we find otherwise
+	    for entry in allEntries: #try to aggregate every entry with every other entry
+		if self.tryAggregate(entry):
+		    doneAggregating = False #if we're able to aggregate something, then we might not be done aggregating
+		
 
     # we check the given route for aggregability against everything in the table,
     # when we find a match, calculate what the new entry should be,
@@ -317,6 +321,7 @@ class Router:
     	self.routeAnnouncements.append(packet)
 	# see if we can aggregate the new route with anything
 	self.tryAggregate(((network, netmask), networkInfo))
+	self.runAggregation() #now try aggregating anything in entire table
         # Update received from a customer
         if self.relations[packet['src']] == 'cust':
             # send updates to all other neighbors
