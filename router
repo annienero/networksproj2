@@ -144,6 +144,7 @@ class Router:
 
     # aggregate all entries in the table that can be aggregated, until no more can be aggregated
     def runAggregation(self):
+	print("this is still todo -- runAggregation()")
         # for every entry in the table, try to aggregate it with every other entry
         # if you can't aggregate any of them, you're done
         # if you can, aggregate them and then repeat this whole process on the newly made table
@@ -424,10 +425,10 @@ def ipToBin(ip):
 # NEEDS TESTING
 def binToIp(bin):
     ipNumbers = []
-    ipNumbers.append(string(int(bin[0:8])))
-    ipNumbers.append(string(int(bin[8:16])))
-    ipNumbers.append(string(int(bin[16:24])))
-    ipNumbers.append(string(int(bin[24:32])))
+    ipNumbers.append(str(int(bin[0:8], 2)))
+    ipNumbers.append(str(int(bin[8:16], 2)))
+    ipNumbers.append(str(int(bin[16:24], 2)))
+    ipNumbers.append(str(int(bin[24:32], 2)))
     return ".".join(ipNumbers)
 
 # NEEDS TESTING
@@ -443,4 +444,7 @@ def resolveForwardingKey(network, netmask):
 
 if __name__ == "__main__":
     router = Router(args.networks)
+    # some print testing for untested methods
+    print("111111111111111111100000000000000 (255.255.192.0) = " + binToIp("11111111111111111100000000000000"))
+    print("255.255.128.0 = " + shortenIp("255.255.192.0", 17)) 
     router.run()
