@@ -62,13 +62,29 @@ class Router:
             self.relations[network] = relation
         return
 
-    # forwarding table helpers
+    # ---------------- F O R W A R D I N G   T A B L E   H E L P E R S -------------------
+
+    # A NetworkKey is a (networkIp, netmask)
+    # A NetworkInfo is a dictionary that has all the info about a route to a given network (localpref, origin, ASPath etc)
+    # A RouteEntry is a (networkKey, networkInfo)
 
     # adds an entry to the forwarding table
     def addTableEntry(self, networkKey, networkInfo):
         if not self.table.has_key(networkKey):
             self.table[networkKey] = []
         self.table[networkKey].append(networkInfo)
+
+    # NEEDS TESTING
+    # removes an entry from the forwarding table
+    def removeTableEntry(self, networkKey, networkInfo):
+        if not self.table.has_key(networkKey):
+            print("-------- ERROR: Can't remove entry that doesn't exist")
+        else:
+            networkInfos = self.table[networkKey]
+            networkInfos.remove(networkInfo)
+            if len(networkInfos) == 0:
+                self.table.pop(networkKey) #remove the key from the dictionary if we actually emptied its list entirely
+
 
     # flat map self.table into a list of (networkKey, networkInfo)
     def flattenTable(self):
@@ -78,6 +94,68 @@ class Router:
             loNetworkPairs = map(lambda nwi: (networkKey, nwi), loNetworkInfo)
             acc += loNetworkPairs
         return acc
+
+    # -------- R O U T E   A G G R E G A T I O N   H E L P E R S -------- #
+
+    # need a function to convert from binary string back into an ip string
+
+    # NEEDS TESTING
+    # checks if the given routes are aggregable, if they are returns the new route resulting from their aggregation
+    # otherwise returns false
+    # (they have the same attributes, next hop, and numerically adjacent networks)
+    def aggregable(self, routeEntry1, routeEntry2):
+        # check if they're numerically adjacent, which means:
+        # netmasks must be the same and all bits up to the last one of the network ip must match
+        sameNetmask = routeEntry1[0][1] == routeEntry2[0][1]
+        netmaskLength = ipToBin(routeEntry1[0][1]).count('1') # count the number of 1's in the binary string version of the netmask
+        allBitsMatchUpToLastOne = ipToBin(routeEntry1[0][0])[:netmaskLength-1] == ipToBin(routeEntry1[0][0])[:netmaskLength-1]
+        numericallyAdjacent = sameNetmask and allBitsMatchUpToLastOne
+        # check that the other attributes and next hop match
+        sameLocalpref = routeEntry1[1]['localpref'] == routeEntry2[1]['localpref']
+        sameSelfOrigin = routeEntry1[1]['selfOrigin'] == routeEntry2[1]['selfOrigin']
+        sameASPath = routeEntry1[1]['ASPath'] == routeEntry2[1]['ASPath']
+        sameOrigin = routeEntry1[1]['origin'] == routeEntry2[1]['origin']
+        sameNextHop = routeEntry1[1]['nextHopIp'] == routeEntry2[1]['nextHopIp']
+        if numericallyAdjacent and sameLocalpref and sameSelfOrigin and sameASPath and sameOrigin and sameNextHop:
+            # calculate the new RouteEntry and return it
+            shortenedNetworkIp = shortenIp(routeEntry[0][0], netmaskLength-1)
+            shortenedNetmaskIp = shortenIp(routeEntry[0][1], netmaskLength-1)
+            return ((shortenedNetworkIp, shortenedNetmaskIp), routeEntry1[1])
+        else:
+            return False
+
+    # NEEDS TESTING
+    # if the given route can be aggregated with anything in the forwarding table,
+    # do the aggregation and return true, otherwise return false
+    def tryAggregate(self, routeEntry):
+        allEntries = self.flattenTable()
+        # if routeEntry is already in allEntries, 
+        for entry in allEntries:
+            if not entry == routeEntry: # make sure we skip ourself if we're in the list
+                aggregation = self.aggregable(routeEntry, entry) # will be the new entry if they are aggregable, false otherwise
+                if aggregation:
+                    # remove both the entries involved in aggregation, then add the aggregation
+                    self.removeTableEntry(routeEntry[0], routeEntry[1])
+                    self.removeTableEntry(entry[0], entry[1])
+                    self.addTableEntry(aggregation[0], aggregation[1])
+                    return True
+                else:
+                    return False
+
+    # aggregate all entries in the table that can be aggregated, until no more can be aggregated
+    def runAggregation(self):
+        # for every entry in the table, try to aggregate it with every other entry
+        # if you can't aggregate any of them, you're done
+        # if you can, aggregate them and then repeat this whole process on the newly made table
+
+    # we check the given route for aggregability against everything in the table,
+    # when we find a match, calculate what the new entry should be,
+    # remove the entry it was aggregable with (remove entry from dictionary if need be)
+    # then add in the calculated new entry
+
+    # rebuildForwardingTable(self)
+
+    # -------- S T A R T E R   C O D E   H E L P E R S -------- #
 
     def lookup_routes(self, daddr):
         """ Lookup all valid routes for an address """
@@ -157,8 +235,8 @@ class Router:
             originToNumMap = {'UNK': 1, 'EGP': 2, 'IGP': 3}
             np1Origin = originToNumMap[networkPair1[1]['origin']]
             np2Origin = originToNumMap[networkPair2[1]['origin']]
-            src1 = int(ipToBin(networkPair1[1]['ip']), 2)
-            src2 = int(ipToBin(networkPair2[1]['ip']), 2)
+            src1 = int(ipToBin(networkPair1[1]['nextHopIp']), 2)
+            src2 = int(ipToBin(networkPair2[1]['nextHopIp']), 2)
             if not np1Match:
                 return 1
             if not np2Match:
@@ -189,7 +267,7 @@ class Router:
         bestEntry = 0
         for i in range(0, len(allTableEntries)):
             bestEntry = allTableEntries[i]
-            route = (bestEntry[0][0], bestEntry[0][1], bestEntry[1]['ip'])
+            route = (bestEntry[0][0], bestEntry[0][1], bestEntry[1]['nextHopIp'])
             # (network, netmask, ip)
             bin = resolveForwardingKey(route[0], route[1])
             match = destAsBin[:len(bin)] == bin
@@ -225,7 +303,7 @@ class Router:
         networkInfo['selfOrigin'] = packet['msg']['selfOrigin']
         networkInfo['ASPath'] = packet['msg']['ASPath']
         networkInfo['origin'] = packet['msg']['origin']
-        networkInfo['ip'] = srcif
+        networkInfo['nextHopIp'] = srcif
     	self.addTableEntry((network, netmask), networkInfo)
     	# save a copy of the routing announcement for later
     	self.routeAnnouncements.append(packet)
@@ -254,7 +332,7 @@ class Router:
             obj = {}
             obj['network'] = pair[0][0]
             obj['netmask'] = pair[0][1]
-            obj['peer'] = pair[1]['ip']
+            obj['peer'] = pair[1]['nextHopIp']
             message.append(obj)
         return message
 
@@ -321,6 +399,8 @@ class Router:
                     return
         return
 
+# -------- U T I L I T Y ------- #
+
 def formatMessage(dest, packet): # works for update
     packetSrc = packet['src']
     newPacket = {}
@@ -340,6 +420,23 @@ def ipToBin(ip):
             else:
                 bin += '0'
     return bin
+
+# NEEDS TESTING
+def binToIp(bin):
+    ipNumbers = []
+    ipNumbers.append(string(int(bin[0:8])))
+    ipNumbers.append(string(int(bin[8:16])))
+    ipNumbers.append(string(int(bin[16:24])))
+    ipNumbers.append(string(int(bin[24:32])))
+    return ".".join(ipNumbers)
+
+# NEEDS TESTING
+# leaves the first length bits of the ip untouched, and zeroes all bits after that point
+def shortenIp(ip, length):
+    thirtyTwoZeroBits = "00000000000000000000000000000000"
+    ipAsBinary = ipToBin(ip)
+    shortenedIpAsBinary = ipAsBinary[:length] + thirtyTwoZeroBits[length:]
+    return binToIp(shortenedIpAsBinary)
 
 def resolveForwardingKey(network, netmask):
     return ipToBin(network)[:ipToBin(netmask).count('1')]
