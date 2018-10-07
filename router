@@ -245,7 +245,7 @@ class Router:
 
     def revoke(self, packet):
         """	handle revoke packets	"""
-        # TODO called from handle packet
+        self.routeAnnouncements.append(packet)
         return True
 
     def getTable(self):
